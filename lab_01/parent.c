@@ -1,4 +1,3 @@
-// #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -83,7 +82,14 @@ int main(void) {
     while (1) {
 
       printf("Введите число: ");
-      scanf("%d", &number);
+      int ret = scanf("%d", &number);
+      if (ret == EOF) {
+        perror("scanf EOF");
+        break;
+      } else if (ret < 0) {
+        perror("scanf < 0");
+        break;
+      }
 
       if (write(pipe1[1], &number, sizeof(number)) == -1) {
         perror("write to pipe1");

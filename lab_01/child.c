@@ -32,6 +32,10 @@ int main(int argc, char *argv[]) {
   close(pipe1_write_fd);
   close(pipe2_read_fd);
 
+  dup2(pipe1_read_fd, 0);
+
+  close(pipe1_read_fd);
+
   FILE *output_file = fopen(filename, "w");
   if (output_file == NULL) {
     perror("child: fopen");
@@ -45,7 +49,7 @@ int main(int argc, char *argv[]) {
 
   // child logic cycle
   while (1) {
-    if (read(pipe1_read_fd, &number, sizeof(number)) == -1) {
+    if (read(0, &number, sizeof(number)) == -1) {
       perror("child: pipe1 read");
       return 1;
     }
