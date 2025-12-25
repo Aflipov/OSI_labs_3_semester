@@ -7,24 +7,24 @@
 #include <unistd.h>
 
 #define EPSILON 1e-9
-#define MAX_MATRIX_SIZE 200
+#define MAX_MATRIX_SIZE 5000
 
 typedef struct {
-  double **matrix;            // Расширенная матрица системы
-  int size;                   // Размерность системы
-  int thread_id;              // ID потока (0..num_threads-1)
-  int num_threads;            // Общее количество потоков
-  pthread_barrier_t *barrier; // Барьер для синхронизации
-  volatile int *error_flag;   // Флаг ошибки
+  double **matrix;
+  int size;
+  int thread_id;
+  int num_threads;
+  pthread_barrier_t *barrier;
+  volatile int *error_flag;
 } thread_data_t;
 
 typedef struct {
-  double sequential_time; // Время последовательного выполнения
-  double parallel_time;   // Время параллельного выполнения
-  int num_threads;        // Количество потоков
-  int matrix_size;        // Размер матрицы
-  double speedup;         // Ускорение
-  double efficiency;      // Эффективность
+  double sequential_time;
+  double parallel_time;
+  int num_threads;
+  int matrix_size;
+  double speedup;
+  double efficiency;
 } performance_stats_t;
 
 static performance_stats_t stats;
@@ -38,7 +38,6 @@ double **allocate_matrix(int rows, int cols) {
   for (int i = 0; i < rows; i++) {
     mat[i] = (double *)malloc(cols * sizeof(double));
     if (mat[i] == NULL) {
-      // Освобождаем уже выделенную память
       for (int j = 0; j < i; j++) {
         free(mat[j]);
       }
@@ -90,13 +89,12 @@ void generate_test_matrix(double **matrix, int size) {
     double sum = 0.0;
     for (int j = 0; j < size; j++) {
       if (i == j) {
-        matrix[i][j] = 10.0 + i * 2.0; // Диагональные элементы
+        matrix[i][j] = 10.0 + i * 2.0;
       } else {
-        matrix[i][j] = 1.0; // Внедиагональные элементы
+        matrix[i][j] = 1.0;
       }
       sum += matrix[i][j];
     }
-    // Правая часть = сумма коэффициентов + небольшой сдвиг
     matrix[i][size] = sum + i * 0.5;
   }
 }
@@ -107,12 +105,8 @@ double get_time_ms(void) {
   return tv.tv_sec * 1000.0 + tv.tv_usec / 1000.0;
 }
 
-// последовательная реализация
 int gauss_sequential(double **matrix, int size) {
-  // Прямой ход
   for (int k = 0; k < size; k++) {
-    // Поиск максимального элемента в столбце (частичный выбор главного
-    // элемента)
     int max_row = k;
     double max_val = fabs(matrix[k][k]);
     for (int i = k + 1; i < size; i++) {
@@ -122,20 +116,17 @@ int gauss_sequential(double **matrix, int size) {
       }
     }
 
-    // Проверка на вырожденность
     if (fabs(matrix[max_row][k]) < EPSILON) {
       fprintf(stderr, "Error: Matrix is singular at row %d\n", k);
       return -1;
     }
 
-    // Перестановка строк
     if (max_row != k) {
       double *temp = matrix[k];
       matrix[k] = matrix[max_row];
       matrix[max_row] = temp;
     }
 
-    // Исключение
     for (int i = k + 1; i < size; i++) {
       double factor = matrix[i][k] / matrix[k][k];
       for (int j = k; j < size + 1; j++) {
@@ -144,7 +135,6 @@ int gauss_sequential(double **matrix, int size) {
     }
   }
 
-  // Обратный ход
   for (int i = size - 1; i >= 0; i--) {
     for (int j = i + 1; j < size; j++) {
       matrix[i][size] -= matrix[i][j] * matrix[j][size];
@@ -159,7 +149,6 @@ int gauss_sequential(double **matrix, int size) {
   return 0;
 }
 
-// параллельная реализация
 void *thread_forward_elimination(void *arg) {
   thread_data_t *data = (thread_data_t *)arg;
   double **matrix = data->matrix;
@@ -169,13 +158,10 @@ void *thread_forward_elimination(void *arg) {
   pthread_barrier_t *barrier = data->barrier;
   volatile int *error_flag = data->error_flag;
 
-  // Прямой ход
   for (int k = 0; k < size; k++) {
-    // Проверка ошибки
     if (*error_flag)
       pthread_exit(NULL);
 
-    // Поток 0 выполняет выбор главного элемента и перестановку
     if (thread_id == 0) {
       int max_row = k;
       double max_val = fabs(matrix[k][k]);
@@ -193,7 +179,6 @@ void *thread_forward_elimination(void *arg) {
         pthread_exit(NULL);
       }
 
-      // Перестановка строк
       if (max_row != k) {
         double *temp = matrix[k];
         matrix[k] = matrix[max_row];
@@ -201,22 +186,18 @@ void *thread_forward_elimination(void *arg) {
       }
     }
 
-    // Синхронизация: все потоки ждут завершения выбора главного элемента
     pthread_barrier_wait(barrier);
 
     if (*error_flag)
       pthread_exit(NULL);
 
-    // Кэшируем ведущую строку и pivot
     double pivot = matrix[k][k];
     double *pivot_row = matrix[k];
 
-    // Распределение работы между потоками
     int rows_to_process = size - k - 1;
     if (rows_to_process <= 0)
       continue;
 
-    // Определяем количество активных потоков
     int active_threads =
         (rows_to_process < num_threads) ? rows_to_process : num_threads;
     if (thread_id >= active_threads) {
@@ -224,7 +205,6 @@ void *thread_forward_elimination(void *arg) {
       continue;
     }
 
-    // Вычисляем диапазон строк для текущего потока
     int rows_per_thread = rows_to_process / active_threads;
     int extra_rows = rows_to_process % active_threads;
 
@@ -237,7 +217,6 @@ void *thread_forward_elimination(void *arg) {
     int end_row =
         start_row + rows_per_thread + (thread_id < extra_rows ? 1 : 0);
 
-    // Исключение для назначенных строк
     for (int i = start_row; i < end_row; i++) {
       double factor = matrix[i][k] / pivot;
       for (int j = k; j < size + 1; j++) {
@@ -245,7 +224,6 @@ void *thread_forward_elimination(void *arg) {
       }
     }
 
-    // Синхронизация: все потоки завершили обработку строк для данного k
     pthread_barrier_wait(barrier);
   }
 
@@ -258,12 +236,6 @@ int gauss_parallel(double **matrix, int size, int num_threads) {
     return -1;
   }
 
-  // // Для маленьких матриц используем последовательный алгоритм
-  // if (size < num_threads) {
-  //   return gauss_sequential(matrix, size);
-  // }
-
-  // Инициализация барьера и флага ошибки
   pthread_barrier_t barrier;
   volatile int error_flag = 0;
 
@@ -272,7 +244,6 @@ int gauss_parallel(double **matrix, int size, int num_threads) {
     return -1;
   }
 
-  // Создание потоков
   pthread_t *threads = (pthread_t *)malloc(num_threads * sizeof(pthread_t));
   thread_data_t *thread_data =
       (thread_data_t *)malloc(num_threads * sizeof(thread_data_t));
@@ -283,7 +254,6 @@ int gauss_parallel(double **matrix, int size, int num_threads) {
     return -1;
   }
 
-  // Инициализация данных потоков
   for (int i = 0; i < num_threads; i++) {
     thread_data[i].matrix = matrix;
     thread_data[i].size = size;
@@ -295,7 +265,6 @@ int gauss_parallel(double **matrix, int size, int num_threads) {
     if (pthread_create(&threads[i], NULL, thread_forward_elimination,
                        &thread_data[i]) != 0) {
       perror("pthread_create failed");
-      // Отменяем уже созданные потоки
       error_flag = 1;
       for (int j = 0; j < i; j++) {
         pthread_cancel(threads[j]);
@@ -308,12 +277,10 @@ int gauss_parallel(double **matrix, int size, int num_threads) {
     }
   }
 
-  // Ожидание завершения всех потоков
   for (int i = 0; i < num_threads; i++) {
     pthread_join(threads[i], NULL);
   }
 
-  // Освобождение ресурсов
   free(threads);
   free(thread_data);
   pthread_barrier_destroy(&barrier);
@@ -322,7 +289,6 @@ int gauss_parallel(double **matrix, int size, int num_threads) {
     return -1;
   }
 
-  // Обратный ход выполняется последовательно основным потоком
   for (int i = size - 1; i >= 0; i--) {
     for (int j = i + 1; j < size; j++) {
       matrix[i][size] -= matrix[i][j] * matrix[j][size];
@@ -339,7 +305,6 @@ int gauss_parallel(double **matrix, int size, int num_threads) {
 
 // запуск теста, принимает размер матрицы и кол-во потоков
 void measure_performance(int matrix_size, int num_threads) {
-  // Выделение памяти
   double **matrix_seq = allocate_matrix(matrix_size, matrix_size + 1);
   double **matrix_par = allocate_matrix(matrix_size, matrix_size + 1);
 
@@ -348,11 +313,9 @@ void measure_performance(int matrix_size, int num_threads) {
     return;
   }
 
-  // Генерация тестовой матрицы
   generate_test_matrix(matrix_seq, matrix_size);
   copy_matrix(matrix_par, matrix_seq, matrix_size, matrix_size + 1);
 
-  // Измерение последовательного выполнения
   double start_time = get_time_ms();
   if (gauss_sequential(matrix_seq, matrix_size) != 0) {
     fprintf(stderr, "Sequential solution failed\n");
@@ -362,7 +325,6 @@ void measure_performance(int matrix_size, int num_threads) {
   }
   double seq_time = get_time_ms() - start_time;
 
-  // Измерение параллельного выполнения
   start_time = get_time_ms();
   if (gauss_parallel(matrix_par, matrix_size, num_threads) != 0) {
     fprintf(stderr, "Parallel solution failed\n");
@@ -372,11 +334,9 @@ void measure_performance(int matrix_size, int num_threads) {
   }
   double par_time = get_time_ms() - start_time;
 
-  // Вычисление ускорения и эффективности
   double speedup = seq_time / par_time;
   double efficiency = speedup / num_threads;
 
-  // Сохранение статистики
   stats.sequential_time = seq_time;
   stats.parallel_time = par_time;
   stats.num_threads = num_threads;
@@ -384,13 +344,11 @@ void measure_performance(int matrix_size, int num_threads) {
   stats.speedup = speedup;
   stats.efficiency = efficiency;
 
-  // Вывод результатов
   printf(
       "Size: %3d | Threads: %2d | Sequential: %8.2f ms | Parallel: %8.2f ms | "
       "Speedup: %6.3f | Efficiency: %6.3f\n",
       matrix_size, num_threads, seq_time, par_time, speedup, efficiency);
 
-  // Проверка корректности (сравнение решений)
   int correct = 1;
   for (int i = 0; i < matrix_size; i++) {
     if (fabs(matrix_seq[i][matrix_size] - matrix_par[i][matrix_size]) > 1e-5) {
@@ -403,7 +361,6 @@ void measure_performance(int matrix_size, int num_threads) {
     fprintf(stderr, "Warning: Solutions differ!\n");
   }
 
-  // Освобождение памяти
   free_matrix(matrix_seq, matrix_size);
   free_matrix(matrix_par, matrix_size);
 }
@@ -414,7 +371,6 @@ void print_usage(const char *program_name) {
   printf("  <num_threads>     Number of threads (required)\n");
   printf("  -s <size>         Matrix size (default: 50)\n");
   printf("  -t                 Test mode: run performance tests\n");
-  printf("  -d                 Demo mode: show thread information\n");
   printf("  -h                 Show this help message\n");
   printf("\nExamples:\n");
   printf("  %s 4                # Run with 4 threads, default size 50\n",
@@ -423,50 +379,13 @@ void print_usage(const char *program_name) {
          program_name);
   printf("  %s 4 -t             # Run performance tests with 4 threads\n",
          program_name);
-  printf("  %s 4 -d             # Demo mode: show thread info\n", program_name);
-}
-
-void demo_threads(int num_threads) {
-  printf("\n=== Thread Demonstration ===\n");
-  printf("Process PID: %d\n", getpid());
-  printf("Number of threads requested: %d\n", num_threads);
-  printf("\nTo view threads in the system, run:\n");
-  printf("  ps -T -p %d\n", getpid());
-  printf("  top -H -p %d\n", getpid());
-  printf("  htop (then press 'H' to show threads)\n");
-  printf("\nPress Enter to start computation...\n");
-  getchar();
-
-  // Создаем тестовую задачу
-  int size = 50;
-  double **matrix = allocate_matrix(size, size + 1);
-  if (matrix == NULL) {
-    fprintf(stderr, "Memory allocation failed\n");
-    return;
-  }
-
-  generate_test_matrix(matrix, size);
-  printf("Starting computation with %d threads...\n", num_threads);
-  printf("You can now check threads using the commands above.\n\n");
-
-  double start = get_time_ms();
-  if (gauss_parallel(matrix, size, num_threads) == 0) {
-    double elapsed = get_time_ms() - start;
-    printf("Computation completed in %.2f ms\n", elapsed);
-  } else {
-    fprintf(stderr, "Computation failed\n");
-  }
-
-  free_matrix(matrix, size);
 }
 
 int main(int argc, char *argv[]) {
   int num_threads = 0;
   int matrix_size = 50;
   int test_mode = 0;
-  int demo_mode = 0;
 
-  // Парсинг аргументов
   if (argc < 2) {
     print_usage(argv[0]);
     return 1;
@@ -488,8 +407,6 @@ int main(int argc, char *argv[]) {
       }
     } else if (strcmp(argv[i], "-t") == 0) {
       test_mode = 1;
-    } else if (strcmp(argv[i], "-d") == 0) {
-      demo_mode = 1;
     } else if (strcmp(argv[i], "-h") == 0) {
       print_usage(argv[0]);
       return 0;
@@ -500,13 +417,6 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  // Режим демонстрации потоков
-  if (demo_mode) {
-    demo_threads(num_threads);
-    return 0;
-  }
-
-  // Режим тестирования производительности
   if (test_mode) {
     printf("\n=== Performance Analysis ===\n");
     printf("Matrix Size | Threads | Sequential (ms) | Parallel (ms) | Speedup "
@@ -514,29 +424,16 @@ int main(int argc, char *argv[]) {
     printf("-------------------------------------------------------------------"
            "--------\n");
 
-    // Тестируем разные размеры матриц
-    int sizes[] = {20, 30, 50, 70, 100, 150};
+    int sizes[] = {250, 500, 1000, 1500, 2000};
     int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
 
     for (int i = 0; i < num_sizes; i++) {
       measure_performance(sizes[i], num_threads);
     }
 
-    printf("\n=== Testing Different Thread Counts ===\n");
-    printf("Matrix Size: %d\n", matrix_size);
-    printf(
-        "Threads | Sequential (ms) | Parallel (ms) | Speedup | Efficiency\n");
-    printf("------------------------------------------------------------\n");
-
-    // Тестируем разное количество потоков
-    for (int t = 1; t <= num_threads; t++) {
-      measure_performance(matrix_size, t);
-    }
-
     return 0;
   }
 
-  // Обычный режим: решение одной задачи
   printf("Solving system of linear equations using Gaussian elimination\n");
   printf("Matrix size: %dx%d\n", matrix_size, matrix_size);
   printf("Number of threads: %d\n\n", num_threads);
@@ -560,7 +457,6 @@ int main(int argc, char *argv[]) {
 
   printf("Solution completed in %.2f ms\n\n", elapsed_time);
 
-  // Вывод решений (только первые и последние для больших матриц)
   printf("Solutions:\n");
   if (matrix_size <= 10) {
     for (int i = 0; i < matrix_size; i++) {

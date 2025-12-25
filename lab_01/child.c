@@ -23,6 +23,11 @@ int is_prime(int number) {
 }
 
 int main(int argc, char *argv[]) {
+  if (argc != 5) {
+    fprintf(stderr, "Wrong arg count in child");
+    return 1;
+  }
+
   int pipe1_read_fd = atoi(argv[1]);
   int pipe1_write_fd = atoi(argv[2]);
   int pipe2_read_fd = atoi(argv[3]);
